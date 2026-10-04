@@ -218,7 +218,17 @@ function trakt_tv_fetch_upcoming($days = 7) {
 }
 
 
-function trakt_tv_get_valid_token() {
+/**
+ * Returns a valid access token, refreshing it first if it is about to expire.
+ *
+ * @param int $refresh_margin
+ *   Refresh the token if it expires within this many seconds. Cron passes a
+ *   larger margin so tokens are renewed before anyone needs them.
+ *
+ * @return string|null
+ *   The access token, or NULL if none is available.
+ */
+function trakt_tv_get_valid_token($refresh_margin = 60) {
   $tokens = trakt_tv_token_store_get();
   $creds = trakt_tv_get_credentials();
 
@@ -228,36 +238,80 @@ function trakt_tv_get_valid_token() {
   }
 
   $expires_at = $tokens['created_at'] + $tokens['expires_in'];
-  if (time() < $expires_at - 60) {
+  if (time() < $expires_at - $refresh_margin) {
     return $tokens['access_token']; // still valid
   }
 
-  // Refresh token
+  // Trakt issues a new refresh token on every refresh and invalidates the old
+  // one, so only one request may refresh at a time.
+  if (!lock_acquire('trakt_tv_token_refresh', 30)) {
+    lock_wait('trakt_tv_token_refresh');
+    $tokens = trakt_tv_token_store_get();
+    return isset($tokens['access_token']) ? $tokens['access_token'] : NULL;
+  }
+
+  // Another request may have refreshed while we waited for the lock.
+  $tokens = trakt_tv_token_store_get();
+  if (time() < $tokens['created_at'] + $tokens['expires_in'] - $refresh_margin) {
+    lock_release('trakt_tv_token_refresh');
+    return $tokens['access_token'];
+  }
+
+  // Refresh the token. PKCE apps have no client secret, so only send one
+  // when it has been configured (legacy Trakt apps).
   $payload = [
     'refresh_token' => $tokens['refresh_token'],
     'client_id' => $creds['client_id'],
-    'client_secret' => $creds['client_secret'],
     'redirect_uri' => $creds['redirect_uri'],
     'grant_type' => 'refresh_token',
   ];
-
-  $opts = [
-    'http' => [
-      'header' => "Content-type: application/json",
-      'method' => 'POST',
-      'content' => json_encode($payload),
-    ]
-  ];
-
-  $context = stream_context_create($opts);
-  $response = file_get_contents('https://api.trakt.tv/oauth/token', false, $context);
-
-  if ($response === FALSE) {
-    watchdog('trakt_tv', 'Failed to refresh Trakt token.', [], WATCHDOG_ERROR);
-    return NULL;
+  if (!empty($creds['client_secret'])) {
+    $payload['client_secret'] = $creds['client_secret'];
   }
 
-  $data = json_decode($response, true);
+  $data = trakt_tv_request_token($payload);
+  lock_release('trakt_tv_token_refresh');
+  if (!$data) {
+    watchdog('trakt_tv', 'Failed to refresh Trakt token. Re-authorize at <a href="@url">Trakt Auth Code Exchange</a>.', [
+      '@url' => url('admin/config/media/trakt_tv/auth-exchange'),
+    ], WATCHDOG_ERROR);
+    // An early (cron) refresh can fail while the current token still works.
+    return time() < $expires_at ? $tokens['access_token'] : NULL;
+  }
+
+  return $data['access_token'];
+}
+
+/**
+ * Requests tokens from the Trakt OAuth endpoint and saves them.
+ *
+ * Existing tokens are only replaced when Trakt returns a complete token set,
+ * so a failed request never wipes out a working refresh token.
+ *
+ * @param array $payload
+ *   The request body for https://api.trakt.tv/oauth/token.
+ *
+ * @return array|false
+ *   The decoded token response, or FALSE on failure.
+ */
+function trakt_tv_request_token(array $payload) {
+  $response = backdrop_http_request('https://api.trakt.tv/oauth/token', [
+    'method' => 'POST',
+    'data' => json_encode($payload),
+    'headers' => [
+      'Content-Type' => 'application/json',
+    ],
+  ]);
+
+  $data = isset($response->data) ? json_decode($response->data, TRUE) : NULL;
+  if ($response->code != 200 || empty($data['access_token']) || empty($data['refresh_token'])) {
+    watchdog('trakt_tv', 'Trakt token request (@grant) failed with status @code: @data', [
+      '@grant' => $payload['grant_type'],
+      '@code' => $response->code,
+      '@data' => isset($response->data) ? $response->data : '',
+    ], WATCHDOG_ERROR);
+    return FALSE;
+  }
 
   trakt_tv_token_store_save([
     'access_token' => $data['access_token'],
@@ -266,7 +320,23 @@ function trakt_tv_get_valid_token() {
     'created_at' => time(),
   ]);
 
-  return $data['access_token'];
+  return $data;
+}
+
+/**
+ * Generates a PKCE code verifier and its S256 code challenge.
+ *
+ * @return array
+ *   An array with 'verifier' and 'challenge' keys.
+ */
+function trakt_tv_pkce_generate() {
+  $verifier = rtrim(strtr(base64_encode(random_bytes(48)), '+/', '-_'), '=');
+  $challenge = rtrim(strtr(base64_encode(hash('sha256', $verifier, TRUE)), '+/', '-_'), '=');
+
+  return [
+    'verifier' => $verifier,
+    'challenge' => $challenge,
+  ];
 }
 
 
@@ -394,37 +464,25 @@ function trakt_tv_exchange_auth_code($code) {
   $data = [
     'code' => $code,
     'client_id' => $creds['client_id'],
-    'client_secret' => $creds['client_secret'],
     'redirect_uri' => $creds['redirect_uri'],
     'grant_type' => 'authorization_code',
   ];
+  // Legacy Trakt apps use a client secret; PKCE apps send the code verifier
+  // created when the authorize link was followed.
+  if (!empty($creds['client_secret'])) {
+    $data['client_secret'] = $creds['client_secret'];
+  }
+  $verifier = state_get('trakt_tv_pkce_verifier');
+  if ($verifier) {
+    $data['code_verifier'] = $verifier;
+  }
 
-  $options = [
-    'method' => 'POST',
-    'data' => json_encode($data),
-    'headers' => [
-      'Content-Type' => 'application/json',
-    ],
-  ];
-
-  $response = backdrop_http_request('https://api.trakt.tv/oauth/token', $options);
-
-  if ($response->code != 200) {
-    watchdog('trakt_tv', 'Token exchange failed: @data', ['@data' => $response->data], WATCHDOG_ERROR);
+  if (!trakt_tv_request_token($data)) {
     return FALSE;
   }
 
-  $token_data = json_decode($response->data, TRUE);
-
-  // Save tokens to private file
-  trakt_tv_token_store_save([
-    'access_token' => $token_data['access_token'],
-    'refresh_token' => $token_data['refresh_token'],
-    'expires_in' => $token_data['expires_in'],
-    'created_at' => time(),
-  ]);
-
-  backdrop_set_message(t('Trakt access token successfully saved.'));
+  // Each verifier is only valid for a single authorization.
+  state_del('trakt_tv_pkce_verifier');
   return TRUE;
 }
 

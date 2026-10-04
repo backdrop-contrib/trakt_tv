@@ -5,6 +5,34 @@
 function trakt_tv_init() {
   module_load_include('inc', 'trakt_tv', 'trakt_tv.api');
   module_load_include('inc', 'trakt_tv', 'trakt_tv.nodes');
+
+  // After approving access, Trakt sends the person to the Redirect URI (often
+  // the home page) with ?code=... (sometimes also &iss=https://trakt.tv). If
+  // an authorization is waiting, take them back to the exchange form with the
+  // code filled in.
+  $exchange_path = 'admin/config/media/trakt_tv/auth-exchange';
+  if (!empty($_GET['code']) && is_string($_GET['code'])
+    && (!isset($_GET['iss']) || $_GET['iss'] === 'https://trakt.tv')
+    && current_path() !== $exchange_path
+    && user_access('administer site configuration')
+    && state_get('trakt_tv_pkce_verifier')) {
+    backdrop_goto($exchange_path, ['query' => ['code' => $_GET['code']]]);
+  }
+}
+
+/**
+ * Implements hook_cron().
+ *
+ * Renews the Trakt access token before it expires. Each refresh also issues a
+ * new refresh token, so a site with regular cron runs never needs to be
+ * re-authorized by hand, even when nobody visits it.
+ */
+function trakt_tv_cron() {
+  module_load_include('inc', 'trakt_tv', 'trakt_tv.api');
+  $tokens = trakt_tv_token_store_get();
+  if (!empty($tokens['refresh_token'])) {
+    trakt_tv_get_valid_token(2 * 86400);
+  }
 }
 
 /**
@@ -82,6 +110,14 @@ function trakt_tv_menu() {
     'file' => 'trakt_tv.forms.inc',
   ];
 
+  $items['admin/config/media/trakt_tv/authorize'] = [
+    'title' => 'Authorize with Trakt',
+    'page callback' => 'trakt_tv_authorize_redirect',
+    'access arguments' => ['administer site configuration'],
+    'type' => MENU_CALLBACK,
+    'file' => 'trakt_tv.forms.inc',
+  ];
+
 
   return $items;
 }
@@ -111,17 +147,30 @@ function trakt_tv_settings_form($form, &$form_state) {
     '#required' => FALSE,
   ];
 
-  $form['client_secret'] = [
-    '#type' => 'textfield',
-    '#title' => t('Client Secret'),
-    '#default_value' => $client_secret,
-    '#required' => FALSE,
-  ];
-
   $form['redirect_uri'] = [
     '#type' => 'textfield',
     '#title' => t('Redirect URI'),
+    '#description' => t('Must exactly match a Redirect URI on your Trakt app. Using this site\'s exchange page is easiest: @url', [
+      '@url' => url('admin/config/media/trakt_tv/auth-exchange', ['absolute' => TRUE]),
+    ]),
     '#default_value' => $redirect_uri,
+    '#required' => FALSE,
+  ];
+
+  // New Trakt apps use PKCE and have no client secret. Keep the field for
+  // older apps, collapsed unless a secret is already saved.
+  $form['legacy'] = [
+    '#type' => 'fieldset',
+    '#title' => t('Legacy Trakt apps'),
+    '#collapsible' => TRUE,
+    '#collapsed' => empty($client_secret),
+  ];
+
+  $form['legacy']['client_secret'] = [
+    '#type' => 'textfield',
+    '#title' => t('Client Secret'),
+    '#description' => t('Only for Trakt apps created before PKCE sign-in. New apps do not issue a client secret; leave this empty.'),
+    '#default_value' => $client_secret,
     '#required' => FALSE,
   ];
 
@@ -148,7 +197,7 @@ function trakt_tv_settings_form_submit($form, &$form_state) {
 
   file_unmanaged_save_data(json_encode($credentials), 'private://credentials.json', FILE_EXISTS_REPLACE);
   backdrop_set_message(t('Trakt credentials saved to private directory.'));
-    backdrop_set_message(t('You will need to authorize the URI entered and use the code returned in the URL to get the access token needed here: <a href="@url">@url</a>', [
+  backdrop_set_message(t('Next, authorize this site with Trakt on the <a href="@url">Trakt Auth Code Exchange</a> page.', [
     '@url' => url('admin/config/media/trakt_tv/auth-exchange'),
   ]), 'info');
 }

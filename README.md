@@ -53,17 +53,36 @@ We are open to idea for how to expand this module.
 These fields are required.
 ![image](https://github.com/user-attachments/assets/5a64fcef-0a63-498b-bf14-709f2b676fdf)
 
-Copy the Client ID, Client Secret, and Redirect URI. For the final step, you will need to "authorize" the URI and paste the provided code into `admin/config/media/trakt_tv/auth-exchange`.
+Copy the Client ID and Redirect URI into `admin/config/media/trakt_tv`. New Trakt
+apps sign in with PKCE and do not issue a Client Secret, so leave the
+"Legacy Trakt apps" section empty unless your app was created before Trakt
+switched to PKCE.
+
+Tip: use your site's exchange page as the Redirect URI, e.g.
+`https://example.com/admin/config/media/trakt_tv/auth-exchange`. Trakt will then
+send you straight back to the form with the code filled in. (If you use another
+address, such as your home page, administrators are redirected to the form
+automatically.)
+
+To finish, go to `admin/config/media/trakt_tv/auth-exchange`:
+
+1. Click **Authorize this site with Trakt** and approve access.
+2. Trakt sends you to your Redirect URI with a `code` in the address bar. Paste
+   the code (or the whole address) into the form and submit. Codes expire after
+   a few minutes.
 
 ![image](https://github.com/user-attachments/assets/5f2cd152-3065-49b9-bd1e-4ebab55ef7f2)
 
 Your code will be here after you authorize your site:
 ![image](https://github.com/user-attachments/assets/b9c6308f-669e-4d14-a4d2-0cf5beaf2c8d)
 
+The access token is refreshed automatically when it expires. If refreshing
+fails (for example, the Trakt app was deleted), repeat the authorization steps.
+
 
 ## Issues
 
-Bugs and feature requests should be reported in the [Issue Queue](https://github.com/backdrop-contrib/openai/issues).
+Bugs and feature requests should be reported in the [Issue Queue](https://github.com/backdrop-contrib/trakt_tv/issues).
 
 ## Current Maintainer
 
