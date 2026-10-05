@@ -1,0 +1,49 @@
+{
+    "_config_name": "field.instance.node.tv_show.field_next_episode",
+    "field_name": "field_next_episode",
+    "entity_type": "node",
+    "bundle": "tv_show",
+    "label": "Next episode",
+    "description": "When the next episode airs, from Trakt. Updated automatically.",
+    "widget": {
+        "type": "date_text",
+        "weight": 12,
+        "settings": {
+            "input_format": "d/m/Y - g:i:sa",
+            "input_format_custom": "",
+            "increment": 1,
+            "text_parts": [],
+            "year_range": "-3:+3",
+            "label_position": "none",
+            "no_fieldset": true
+        },
+        "module": "date"
+    },
+    "display": {
+        "default": {
+            "label": "inline",
+            "type": "date_default",
+            "weight": 8,
+            "settings": {
+                "format_type": "medium",
+                "multiple_number": "",
+                "multiple_from": "",
+                "multiple_to": "",
+                "fromto": "both",
+                "show_remaining_days": false
+            },
+            "module": "date"
+        }
+    },
+    "required": 0,
+    "deleted": 0,
+    "default_value": null,
+    "default_value_function": null,
+    "settings": {
+        "default_value": "blank",
+        "default_value_code": "",
+        "default_value2": "same",
+        "default_value_code2": "",
+        "user_register_form": false
+    }
+}

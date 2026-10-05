@@ -1,0 +1,34 @@
+{
+    "_config_name": "field.instance.node.tv_show.field_streaming",
+    "field_name": "field_streaming",
+    "entity_type": "node",
+    "bundle": "tv_show",
+    "label": "Streaming on",
+    "description": "US streaming services with this show (subscription or free), from Trakt. Updated automatically.",
+    "widget": {
+        "type": "taxonomy_autocomplete",
+        "weight": 13,
+        "settings": {
+            "size": 60,
+            "autocomplete_path": "taxonomy/autocomplete",
+            "follow_content_language": true
+        },
+        "module": "taxonomy"
+    },
+    "display": {
+        "default": {
+            "label": "inline",
+            "type": "taxonomy_term_reference_link",
+            "weight": 9,
+            "settings": [],
+            "module": "taxonomy"
+        }
+    },
+    "required": 0,
+    "deleted": 0,
+    "default_value": null,
+    "default_value_function": null,
+    "settings": {
+        "user_register_form": false
+    }
+}

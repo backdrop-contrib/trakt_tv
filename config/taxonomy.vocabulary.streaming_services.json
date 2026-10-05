@@ -1,0 +1,9 @@
+{
+    "_config_name": "taxonomy.vocabulary.streaming_services",
+    "name": "Streaming services",
+    "machine_name": "streaming_services",
+    "description": "Where shows can be streamed, from Trakt (powered by JustWatch). Kept up to date by Trakt TV.",
+    "hierarchy": 0,
+    "language": 0,
+    "weight": 0
+}
