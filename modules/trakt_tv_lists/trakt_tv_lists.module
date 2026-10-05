@@ -325,6 +325,16 @@ function trakt_tv_lists_taxonomy_term_delete(TaxonomyTerm $term) {
     $log = state_get('trakt_tv_lists_last_sync', []);
     unset($log[$term->tid]);
     state_set('trakt_tv_lists_last_sync', $log);
+
+    // Core leaves field references to deleted terms behind. Remove this
+    // list from every show, so no orphaned tags remain.
+    foreach (['field_data_field_tv_lists', 'field_revision_field_tv_lists'] as $table) {
+      if (db_table_exists($table)) {
+        db_delete($table)->condition('field_tv_lists_tid', $term->tid)->execute();
+      }
+    }
+    cache_clear_all('field:node:', 'cache_field', TRUE);
+    entity_get_controller('node')->resetCache();
   }
 }
 

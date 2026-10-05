@@ -28,6 +28,10 @@ sign-in needed) and matches them to your shows by Trakt ID.
 - **TV list links** formatter (the default for that field): each list name
   links to the list's page on your site, followed by a small "(original)" link
   to the publication. It can also link only to one or the other.
+- **TV Lists page** at `/tv-lists`: a View listing every list, with its
+  description, how many shows on your site are on it, and a link to the
+  original. Each list name links to that list's page on your site. Edit it in
+  the Views UI like any other View.
 - **About this TV list** block: on a list's page, shows its description, a
   note on ordering, and a "See the original list" link. Place it at the top of
   the content region of the layout used for taxonomy term pages; it shows
