@@ -1,0 +1,37 @@
+{
+    "_config_name": "field.instance.taxonomy_term.tv_lists.field_tv_list_sync",
+    "field_name": "field_tv_list_sync",
+    "entity_type": "taxonomy_term",
+    "bundle": "tv_lists",
+    "label": "Keep in sync",
+    "description": "Re-sync this list once a day on cron. Useful for lists that change, such as IMDb's Top Rated.",
+    "required": 0,
+    "deleted": 0,
+    "default_value": [
+        {
+            "value": 1
+        }
+    ],
+    "default_value_function": null,
+    "widget": {
+        "weight": "3",
+        "type": "options_onoff",
+        "module": "options",
+        "active": 1,
+        "settings": {
+            "display_label": 1
+        }
+    },
+    "settings": {
+        "user_register_form": false
+    },
+    "display": {
+        "default": {
+            "label": "hidden",
+            "type": "hidden",
+            "weight": "0",
+            "settings": [],
+            "module": ""
+        }
+    }
+}

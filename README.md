@@ -80,6 +80,12 @@ Your code will be here after you authorize your site:
 The access token is refreshed automatically when it expires. If refreshing
 fails (for example, the Trakt app was deleted), repeat the authorization steps.
 
+## Best-of lists (optional)
+
+Enable the included **Trakt TV Lists** submodule to mark shows that appear on
+"best of" lists (NYT, IMDb, Emmys and more) and link to the original lists.
+See `modules/trakt_tv_lists/README.md`.
+
 ## Posters
 
 TV Show content has a **Poster** image field. When a show is added from Trakt,

@@ -1,0 +1,51 @@
+{
+    "_config_name": "field.instance.taxonomy_term.tv_lists.field_tv_list_trakt_url",
+    "field_name": "field_tv_list_trakt_url",
+    "entity_type": "taxonomy_term",
+    "bundle": "tv_lists",
+    "label": "Trakt list",
+    "description": "The public Trakt list to sync from, e.g. https://trakt.tv/users/USERNAME/lists/LIST-NAME. Shows on this site that are on the Trakt list get tagged; shows that drop off are untagged.",
+    "required": 1,
+    "deleted": 0,
+    "default_value": null,
+    "default_value_function": null,
+    "widget": {
+        "weight": "1",
+        "type": "link_field",
+        "module": "link",
+        "active": 0,
+        "settings": []
+    },
+    "settings": {
+        "validate_url": 1,
+        "url": 0,
+        "type": "both",
+        "title": "value",
+        "title_value": "Trakt list",
+        "title_label_use_field_label": 0,
+        "title_maxlength": "128",
+        "enable_tokens": 0,
+        "display": {
+            "url_cutoff": "80"
+        },
+        "attributes": {
+            "target": "_blank",
+            "rel": "",
+            "configurable_class": 0,
+            "class": "",
+            "configurable_title": 0,
+            "title": ""
+        },
+        "rel_remove": "default",
+        "user_register_form": false
+    },
+    "display": {
+        "default": {
+            "label": "hidden",
+            "type": "hidden",
+            "weight": "0",
+            "settings": [],
+            "module": ""
+        }
+    }
+}

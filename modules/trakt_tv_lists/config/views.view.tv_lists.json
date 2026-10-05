@@ -1,0 +1,137 @@
+{
+    "_config_name": "views.view.tv_lists",
+    "name": "tv_lists",
+    "description": "All TV Lists, with how many shows on this site are on each and a link to the original list.",
+    "module": "trakt_tv_lists",
+    "storage": 4,
+    "tag": "trakt_tv_lists",
+    "disabled": false,
+    "base_table": "taxonomy_term_data",
+    "human_name": "TV Lists",
+    "core": null,
+    "display": {
+        "default": {
+            "display_title": "Default",
+            "display_plugin": "default",
+            "display_options": {
+                "query": {
+                    "type": "views_query",
+                    "options": []
+                },
+                "title": "TV Lists",
+                "group_by": true,
+                "access": {
+                    "type": "perm",
+                    "perm": "access content"
+                },
+                "cache": {
+                    "type": "none"
+                },
+                "exposed_form": {
+                    "type": "basic"
+                },
+                "pager": {
+                    "type": "none"
+                },
+                "style_plugin": "table",
+                "row_plugin": "fields",
+                "empty": {
+                    "area": {
+                        "id": "area",
+                        "table": "views",
+                        "field": "area",
+                        "empty": true,
+                        "content": "No TV lists have been added yet.",
+                        "format": "filtered_html"
+                    }
+                },
+                "relationships": {
+                    "nid": {
+                        "id": "nid",
+                        "table": "taxonomy_index",
+                        "field": "nid",
+                        "label": "Show"
+                    }
+                },
+                "fields": {
+                    "name": {
+                        "id": "name",
+                        "table": "taxonomy_term_data",
+                        "field": "name",
+                        "label": "List",
+                        "link_to_taxonomy": true,
+                        "element_label_colon": false
+                    },
+                    "description": {
+                        "id": "description",
+                        "table": "taxonomy_term_data",
+                        "field": "description",
+                        "label": "About",
+                        "element_label_colon": false
+                    },
+                    "nid": {
+                        "id": "nid",
+                        "table": "node",
+                        "field": "nid",
+                        "relationship": "nid",
+                        "group_type": "count",
+                        "label": "Shows on this site",
+                        "element_label_colon": false
+                    },
+                    "field_tv_list_source": {
+                        "id": "field_tv_list_source",
+                        "table": "field_data_field_tv_list_source",
+                        "field": "field_tv_list_source",
+                        "label": "Original",
+                        "element_label_colon": false,
+                        "click_sort_column": "url",
+                        "type": "link_default",
+                        "group_column": "entity_id",
+                        "group_columns": []
+                    }
+                },
+                "sorts": {
+                    "weight": {
+                        "id": "weight",
+                        "table": "taxonomy_term_data",
+                        "field": "weight"
+                    },
+                    "name": {
+                        "id": "name",
+                        "table": "taxonomy_term_data",
+                        "field": "name"
+                    }
+                },
+                "filters": {
+                    "vocabulary": {
+                        "id": "vocabulary",
+                        "table": "taxonomy_term_data",
+                        "field": "vocabulary",
+                        "value": {
+                            "tv_lists": "tv_lists"
+                        }
+                    },
+                    "field_tv_list_active_value": {
+                        "id": "field_tv_list_active_value",
+                        "table": "field_data_field_tv_list_active",
+                        "field": "field_tv_list_active_value",
+                        "value": {
+                            "1": "1"
+                        }
+                    }
+                }
+            }
+        },
+        "page": {
+            "display_title": "Page",
+            "display_plugin": "page",
+            "display_options": {
+                "query": {
+                    "type": "views_query",
+                    "options": []
+                },
+                "path": "tv-lists"
+            }
+        }
+    }
+}
