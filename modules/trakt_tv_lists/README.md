@@ -24,9 +24,9 @@ sign-in needed) and matches them to your shows by Trakt ID.
 - **On these lists** field on TV Show content: filled in automatically. Shows
   on the Trakt list are tagged; shows that drop off are untagged. Shows that
   are not on your site are ignored.
-- **Link to original list** formatter (the default for that field): each list
-  name links to the original list, or to the list's page on your site if no
-  original link is set.
+- **TV list links** formatter (the default for that field): each list name
+  links to the list's page on your site, followed by a small "(original)" link
+  to the publication. It can also link only to one or the other.
 - **About this TV list** block: on a list's page, shows its description, a
   note on ordering, and a "See the original list" link. Place it at the top of
   the content region of the layout used for taxonomy term pages; it shows

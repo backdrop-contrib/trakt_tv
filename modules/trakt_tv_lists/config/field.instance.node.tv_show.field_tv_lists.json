@@ -22,9 +22,12 @@
     "display": {
         "default": {
             "label": "above",
-            "type": "trakt_tv_lists_source_link",
+            "type": "trakt_tv_lists_link",
             "weight": "20",
-            "settings": [],
+            "settings": {
+                "link_to": "both",
+                "new_window": true
+            },
             "module": "trakt_tv_lists"
         }
     }

@@ -414,12 +414,26 @@ function trakt_tv_lists_block_view($delta = '', $settings = [], $contexts = []) 
  */
 function trakt_tv_lists_field_formatter_info() {
   return [
-    'trakt_tv_lists_source_link' => [
-      'label' => t('Link to original list'),
-      'description' => t('List name, linked to the publication\'s own page for the list (falls back to the term page).'),
+    'trakt_tv_lists_link' => [
+      'label' => t('TV list links'),
+      'description' => t("List names, linked to this site's page for the list and/or the publication's original list."),
       'field types' => ['taxonomy_term_reference'],
-      'settings' => ['new_window' => TRUE],
+      'settings' => [
+        'link_to' => 'both',
+        'new_window' => TRUE,
+      ],
     ],
+  ];
+}
+
+/**
+ * Options for the formatter's "link_to" setting.
+ */
+function trakt_tv_lists_link_to_options() {
+  return [
+    'term' => t("This site's list page"),
+    'source' => t('The original list'),
+    'both' => t("This site's list page, plus a small link to the original list"),
   ];
 }
 
@@ -429,6 +443,12 @@ function trakt_tv_lists_field_formatter_info() {
 function trakt_tv_lists_field_formatter_settings_form($field, $instance, $view_mode, $form, &$form_state) {
   $settings = $instance['display'][$view_mode]['settings'];
   return [
+    'link_to' => [
+      '#type' => 'radios',
+      '#title' => t('Link each list name to'),
+      '#options' => trakt_tv_lists_link_to_options(),
+      '#default_value' => $settings['link_to'],
+    ],
     'new_window' => [
       '#type' => 'checkbox',
       '#title' => t('Open original lists in a new window'),
@@ -442,7 +462,12 @@ function trakt_tv_lists_field_formatter_settings_form($field, $instance, $view_m
  */
 function trakt_tv_lists_field_formatter_settings_summary($field, $instance, $view_mode) {
   $settings = $instance['display'][$view_mode]['settings'];
-  return $settings['new_window'] ? t('Opens in a new window') : t('Opens in the same window');
+  $options = trakt_tv_lists_link_to_options();
+  $summary = [t('Links to: @target', ['@target' => $options[$settings['link_to']] ?? $options['both']])];
+  if ($settings['link_to'] != 'term') {
+    $summary[] = $settings['new_window'] ? t('Original lists open in a new window') : t('Original lists open in the same window');
+  }
+  return implode('<br />', $summary);
 }
 
 /**
@@ -450,24 +475,38 @@ function trakt_tv_lists_field_formatter_settings_summary($field, $instance, $vie
  */
 function trakt_tv_lists_field_formatter_view($entity_type, $entity, $field, $instance, $langcode, $items, $display) {
   $element = [];
+  $settings = $display['settings'] + ['link_to' => 'both', 'new_window' => TRUE];
   $terms = taxonomy_term_load_multiple(array_column($items, 'tid'));
+  $source_options = $settings['new_window'] ? ['attributes' => ['target' => '_blank', 'rel' => 'noopener']] : [];
 
   foreach ($items as $delta => $item) {
     if (empty($terms[$item['tid']])) {
       continue;
     }
     $term = $terms[$item['tid']];
+    $term_uri = entity_uri('taxonomy_term', $term);
     $source = $term->field_tv_list_source[LANGUAGE_NONE][0]['url'] ?? '';
-    $options = [];
-    if ($source && $display['settings']['new_window']) {
-      $options['attributes'] = ['target' => '_blank', 'rel' => 'noopener'];
+
+    if ($settings['link_to'] == 'source' && $source) {
+      $element[$delta] = [
+        '#type' => 'link',
+        '#title' => $term->name,
+        '#href' => $source,
+        '#options' => $source_options,
+      ];
+      continue;
     }
+
     $element[$delta] = [
       '#type' => 'link',
       '#title' => $term->name,
-      '#href' => $source ?: 'taxonomy/term/' . $term->tid,
-      '#options' => $options,
+      '#href' => $term_uri['path'],
+      '#options' => $term_uri['options'],
     ];
+    if ($settings['link_to'] == 'both' && $source) {
+      $original = l(t('original'), $source, $source_options);
+      $element[$delta]['#suffix'] = ' <small class="trakt-tv-lists-original">(' . $original . ')</small>';
+    }
   }
   return $element;
 }
