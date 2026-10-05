@@ -341,12 +341,38 @@ function trakt_tv_lists_block_info() {
 }
 
 /**
+ * Default text for the About block's note on ordering.
+ */
+function trakt_tv_lists_default_order_note() {
+  return t("These shows are on this list, but they are shown in this site's own order, not the list's ranking.");
+}
+
+/**
+ * Implements hook_block_configure().
+ */
+function trakt_tv_lists_block_configure($delta = '', $settings = []) {
+  $form = [];
+  if ($delta == 'about') {
+    $settings += ['order_note' => trakt_tv_lists_default_order_note()];
+    $form['order_note'] = [
+      '#type' => 'textarea',
+      '#title' => t('Note on ordering'),
+      '#description' => t("Shown under every list's description, before the link to the original list, so visitors don't mistake this site's order for the list's ranking. Leave empty to hide it."),
+      '#default_value' => $settings['order_note'],
+      '#rows' => 2,
+    ];
+  }
+  return $form;
+}
+
+/**
  * Implements hook_block_view().
  */
 function trakt_tv_lists_block_view($delta = '', $settings = [], $contexts = []) {
   if ($delta != 'about') {
     return [];
   }
+  $settings += ['order_note' => trakt_tv_lists_default_order_note()];
   // Term pages are often served by a View, which hides the term from
   // menu_get_object(), so fall back to the path.
   $term = menu_get_object('taxonomy_term', 2);
@@ -361,6 +387,11 @@ function trakt_tv_lists_block_view($delta = '', $settings = [], $contexts = []) 
   if (!empty($term->description)) {
     $content['description'] = [
       '#markup' => check_markup($term->description, $term->format),
+    ];
+  }
+  if (trim($settings['order_note']) !== '') {
+    $content['order_note'] = [
+      '#markup' => '<p class="trakt-tv-lists-order-note">' . check_plain($settings['order_note']) . '</p>',
     ];
   }
   $source = $term->field_tv_list_source[LANGUAGE_NONE][0]['url'] ?? '';

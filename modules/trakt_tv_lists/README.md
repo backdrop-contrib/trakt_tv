@@ -27,9 +27,13 @@ sign-in needed) and matches them to your shows by Trakt ID.
 - **Link to original list** formatter (the default for that field): each list
   name links to the original list, or to the list's page on your site if no
   original link is set.
-- **About this TV list** block: on a list's page, shows its description and a
-  "See the original list" link. Place it at the top of the content region of
-  the layout used for taxonomy term pages; it shows nothing on other pages.
+- **About this TV list** block: on a list's page, shows its description, a
+  note on ordering, and a "See the original list" link. Place it at the top of
+  the content region of the layout used for taxonomy term pages; it shows
+  nothing on other pages. The note defaults to "These shows are on this list,
+  but they are shown in this site's own order, not the list's ranking." Edit it
+  in the block's settings (for example, "Sorted by my own score, not by the
+  list's ranking."), or leave it empty to hide it.
 
 ## Adding a list
 
