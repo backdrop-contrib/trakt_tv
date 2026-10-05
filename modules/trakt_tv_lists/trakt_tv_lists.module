@@ -39,7 +39,8 @@ function trakt_tv_lists_sync_access($term) {
 /**
  * Implements hook_cron().
  *
- * Once a day, re-syncs every list that has "Keep in sync" checked.
+ * Once a day, re-syncs every list that is shown on the site and has "Keep in
+ * sync" checked.
  */
 function trakt_tv_lists_cron() {
   if (REQUEST_TIME - state_get('trakt_tv_lists_cron_last', 0) < 86400) {
@@ -49,7 +50,7 @@ function trakt_tv_lists_cron() {
 
   $tids = db_query('SELECT tid FROM {taxonomy_term_data} WHERE vocabulary = :vocabulary', [':vocabulary' => 'tv_lists'])->fetchCol();
   foreach (taxonomy_term_load_multiple($tids) as $term) {
-    if (!empty($term->field_tv_list_sync[LANGUAGE_NONE][0]['value'])) {
+    if (trakt_tv_lists_term_is_active($term) && !empty($term->field_tv_list_sync[LANGUAGE_NONE][0]['value'])) {
       trakt_tv_lists_sync_term($term);
     }
   }
@@ -80,7 +81,32 @@ function trakt_tv_lists_form_taxonomy_form_term_alter(&$form, &$form_state) {
  */
 function trakt_tv_lists_term_form_submit($form, &$form_state) {
   if (!empty($form_state['tid']) && ($term = taxonomy_term_load($form_state['tid']))) {
-    trakt_tv_lists_sync_term($term, TRUE);
+    if (trakt_tv_lists_term_is_active($term)) {
+      trakt_tv_lists_sync_term($term, TRUE);
+    }
+    else {
+      backdrop_set_message(t('%list is hidden, so it was not synced. Its shows keep their tags; check "Show on this site" to show it again.', ['%list' => $term->name]), 'warning');
+    }
+  }
+}
+
+/**
+ * Whether a TV list is shown on the site. Lists without a value count as shown.
+ */
+function trakt_tv_lists_term_is_active(TaxonomyTerm $term) {
+  return !isset($term->field_tv_list_active[LANGUAGE_NONE][0]['value'])
+    || !empty($term->field_tv_list_active[LANGUAGE_NONE][0]['value']);
+}
+
+/**
+ * Implements hook_taxonomy_term_presave().
+ *
+ * New lists are shown by default (also when created in code), so the
+ * TV Lists page filter never misses one.
+ */
+function trakt_tv_lists_taxonomy_term_presave(TaxonomyTerm $term) {
+  if ($term->vocabulary == 'tv_lists' && !isset($term->field_tv_list_active[LANGUAGE_NONE][0]['value'])) {
+    $term->field_tv_list_active[LANGUAGE_NONE][0]['value'] = 1;
   }
 }
 
@@ -494,6 +520,9 @@ function trakt_tv_lists_field_formatter_view($entity_type, $entity, $field, $ins
       continue;
     }
     $term = $terms[$item['tid']];
+    if (!trakt_tv_lists_term_is_active($term)) {
+      continue;
+    }
     $term_uri = entity_uri('taxonomy_term', $term);
     $source = $term->field_tv_list_source[LANGUAGE_NONE][0]['url'] ?? '';
 
@@ -519,4 +548,68 @@ function trakt_tv_lists_field_formatter_view($entity_type, $entity, $field, $ins
     }
   }
   return $element;
+}
+
+/**
+ * Implements hook_form_FORM_ID_alter() for trakt_tv_settings_form.
+ *
+ * Adds a TV Lists overview to the Trakt TV settings page, so people can find
+ * the lists without knowing they live in a taxonomy vocabulary.
+ */
+function trakt_tv_lists_form_trakt_tv_settings_form_alter(&$form, &$form_state) {
+  $form['tv_lists'] = [
+    '#type' => 'fieldset',
+    '#title' => t('TV Lists'),
+    '#description' => t('"Best of" lists synced from public Trakt lists. Shows on this site that are on a list are tagged with it, and link to the original list.'),
+    '#weight' => 50,
+  ];
+
+  $tids = db_query('SELECT tid FROM {taxonomy_term_data} WHERE vocabulary = :vocabulary ORDER BY weight, name', [':vocabulary' => 'tv_lists'])->fetchCol();
+  $rows = [];
+  $log = state_get('trakt_tv_lists_last_sync', []);
+  foreach (taxonomy_term_load_multiple($tids) as $term) {
+    $last = $log[$term->tid] ?? NULL;
+    if (!$last) {
+      $status = t('Not synced yet');
+    }
+    elseif (!empty($last['error'])) {
+      $status = t('Failed @when: @error', ['@when' => format_date($last['time'], 'short'), '@error' => $last['error']]);
+    }
+    else {
+      $status = format_plural($last['matched'], '1 show · synced @when', '@count shows · synced @when', ['@when' => format_date($last['time'], 'short')]);
+    }
+    $rows[] = [
+      l($term->name, 'taxonomy/term/' . $term->tid),
+      trakt_tv_lists_term_is_active($term) ? t('Shown') : t('Hidden'),
+      !empty($term->field_tv_list_sync[LANGUAGE_NONE][0]['value']) ? t('Daily') : t('When saved'),
+      check_plain($status),
+      l(t('Edit'), 'taxonomy/term/' . $term->tid . '/edit', ['query' => backdrop_get_destination()]),
+    ];
+  }
+
+  $form['tv_lists']['table'] = [
+    '#theme' => 'table',
+    '#header' => [t('List'), t('Status'), t('Sync'), t('Last sync'), t('Operations')],
+    '#rows' => $rows,
+    '#empty' => t('No TV lists yet.'),
+  ];
+  $form['tv_lists']['links'] = [
+    '#theme' => 'links',
+    '#links' => [
+      'add' => [
+        'title' => t('Add a list'),
+        'href' => 'admin/structure/taxonomy/tv_lists/add',
+        'query' => backdrop_get_destination(),
+      ],
+      'manage' => [
+        'title' => t('Manage lists'),
+        'href' => 'admin/structure/taxonomy/tv_lists',
+      ],
+      'page' => [
+        'title' => t('View the TV Lists page'),
+        'href' => 'tv-lists',
+      ],
+    ],
+    '#attributes' => ['class' => ['inline']],
+  ];
 }

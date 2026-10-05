@@ -110,6 +110,14 @@
                         "value": {
                             "tv_lists": "tv_lists"
                         }
+                    },
+                    "field_tv_list_active_value": {
+                        "id": "field_tv_list_active_value",
+                        "table": "field_data_field_tv_list_active",
+                        "field": "field_tv_list_active_value",
+                        "value": {
+                            "1": "1"
+                        }
                     }
                 }
             }

@@ -22,6 +22,9 @@ sign-in needed) and matches them to your shows by Trakt ID.
   - **Original list:** the publication's own page, linked from show pages and
     from the list's page on your site.
   - **Keep in sync:** re-sync daily on cron, for lists that change (IMDb).
+  - **Show on this site:** uncheck to hide a list from show pages and the TV
+    Lists page and stop syncing it, without deleting it. Its tags are kept, so
+    checking it again restores everything at once.
 - **On these lists** field on TV Show content: filled in automatically. Shows
   on the Trakt list are tagged; shows that drop off are untagged. Shows that
   are not on your site are ignored.
@@ -40,11 +43,19 @@ sign-in needed) and matches them to your shows by Trakt ID.
   in the block's settings (for example, "Sorted by my own score, not by the
   list's ranking."), or leave it empty to hide it.
 
+## Where to find it
+
+The **TV Lists** section of the Trakt TV settings page
+(`admin/config/media/trakt_tv`) lists every list with its status and last
+sync result, and links to add and manage lists. The lists themselves are terms
+in the TV Lists vocabulary (Structure > Taxonomy > TV Lists).
+
 ## Adding a list
 
 1. Find the list on Trakt (search for the publication's name) and check it is
    public and matches the original.
-2. Go to Structure > Taxonomy > TV Lists > Add term. Enter a name, the Trakt
+2. On the Trakt TV settings page, click **Add a list** (or go to Structure >
+   Taxonomy > TV Lists > Add term). Enter a name, the Trakt
    list address, the original list's address and a short description crediting
    the source.
 3. Save. The list syncs immediately and reports how many of your shows are on
