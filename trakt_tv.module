@@ -520,3 +520,71 @@ function _trakt_tv_block_upcoming_episodes($settings) {
 
   return $block;
 }
+
+/**
+ * Implements hook_field_formatter_info().
+ */
+function trakt_tv_field_formatter_info() {
+  return [
+    'trakt_tv_link' => [
+      'label' => t('Link to Trakt'),
+      'description' => t("A link to the show's page on Trakt, built from its Trakt ID."),
+      'field types' => ['text', 'number_integer'],
+      'settings' => [
+        'link_text' => 'View on Trakt',
+        'new_window' => TRUE,
+      ],
+    ],
+  ];
+}
+
+/**
+ * Implements hook_field_formatter_settings_form().
+ */
+function trakt_tv_field_formatter_settings_form($field, $instance, $view_mode, $form, &$form_state) {
+  $settings = $instance['display'][$view_mode]['settings'];
+  return [
+    'link_text' => [
+      '#type' => 'textfield',
+      '#title' => t('Link text'),
+      '#default_value' => $settings['link_text'],
+      '#required' => TRUE,
+    ],
+    'new_window' => [
+      '#type' => 'checkbox',
+      '#title' => t('Open in a new window'),
+      '#default_value' => $settings['new_window'],
+    ],
+  ];
+}
+
+/**
+ * Implements hook_field_formatter_settings_summary().
+ */
+function trakt_tv_field_formatter_settings_summary($field, $instance, $view_mode) {
+  $settings = $instance['display'][$view_mode]['settings'];
+  return t('Link text: @text', ['@text' => $settings['link_text']]);
+}
+
+/**
+ * Implements hook_field_formatter_view().
+ */
+function trakt_tv_field_formatter_view($entity_type, $entity, $field, $instance, $langcode, $items, $display) {
+  $element = [];
+  $settings = $display['settings'];
+  foreach ($items as $delta => $item) {
+    // Trakt IDs are numeric. trakt.tv/shows/ID redirects to the show's page.
+    $trakt_id = trim((string) ($item['value'] ?? ''));
+    if (!ctype_digit($trakt_id)) {
+      continue;
+    }
+    $options = $settings['new_window'] ? ['attributes' => ['target' => '_blank', 'rel' => 'noopener']] : [];
+    $element[$delta] = [
+      '#type' => 'link',
+      '#title' => $settings['link_text'],
+      '#href' => 'https://trakt.tv/shows/' . $trakt_id,
+      '#options' => $options,
+    ];
+  }
+  return $element;
+}
