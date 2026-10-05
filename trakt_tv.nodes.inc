@@ -165,6 +165,13 @@ function trakt_tv_create_node_from_trakt_id($trakt_id) {
   // A missing or failed poster download should not stop the show being saved.
   trakt_tv_set_node_poster($node, $show);
 
+  // Next episode and streaming services come from separate API calls; the
+  // show is saved even if they fail. Cron keeps them current afterwards.
+  module_load_include('inc', 'trakt_tv', 'trakt_tv.refresh');
+  if ($refresh = trakt_tv_refresh_fetch($trakt_id)) {
+    trakt_tv_refresh_apply($node, $refresh);
+  }
+
   $node->status = 1; // Published.
   $node->promote = 1; // Promoted to the front page.
   $node->language = LANGUAGE_NONE;

@@ -109,6 +109,35 @@ The poster uses core image styles ("large" on the show page, "medium" in
 teasers). Change this under Manage Display for the TV Show content type, or
 add the field to your Views.
 
+## Keeping shows up to date
+
+Some show details change after a show is added. Each cron run refreshes the
+next 20 shows from Trakt, working through all of them in turn, so with cron
+every 30 minutes a site with 150 shows is fully refreshed every few hours.
+To refresh everything at once, click **Refresh all shows now** at
+`admin/config/media/trakt_tv`.
+
+Refreshed fields:
+
+- **Rating** and **Status** always follow Trakt.
+- **Network**, **Viewer Guidance** (certification) and **Website** are updated
+  when Trakt has a value. A renamed network (for example "Apple TV+" becoming
+  "Apple TV") gets a new term; the old term is left in place for you to
+  remove.
+- **Next episode**: the air date of the next scheduled episode, empty when
+  none is scheduled.
+- **Streaming on**: US subscription and free streaming services, as terms in
+  the "Streaming services" vocabulary. Rent/buy and add-on channels ("... on
+  Amazon") are left out.
+
+Titles, descriptions, taglines and genres are never changed, so edits made on
+your site are kept. Changes are saved without a new revision or a new
+"updated" date, and shows that have not changed are not saved at all.
+
+Streaming data comes from Trakt's "Where to watch" listings, which are powered
+by JustWatch. Check Trakt's API terms for any attribution they require if you
+display it publicly.
+
 
 ## Issues
 

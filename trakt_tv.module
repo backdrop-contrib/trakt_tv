@@ -26,12 +26,21 @@ function trakt_tv_init() {
  * Renews the Trakt access token before it expires. Each refresh also issues a
  * new refresh token, so a site with regular cron runs never needs to be
  * re-authorized by hand, even when nobody visits it.
+ *
+ * Also refreshes the next few TV shows from Trakt (rating, status, next
+ * episode, streaming services, ...).
  */
 function trakt_tv_cron() {
   module_load_include('inc', 'trakt_tv', 'trakt_tv.api');
   $tokens = trakt_tv_token_store_get();
   if (!empty($tokens['refresh_token'])) {
     trakt_tv_get_valid_token(2 * 86400);
+  }
+
+  $creds = trakt_tv_get_credentials();
+  if (!empty($creds['client_id'])) {
+    module_load_include('inc', 'trakt_tv', 'trakt_tv.refresh');
+    trakt_tv_refresh_cron();
   }
 }
 
@@ -198,7 +207,40 @@ function trakt_tv_settings_form($form, &$form_state) {
     ];
   }
 
+  module_load_include('inc', 'trakt_tv', 'trakt_tv.refresh');
+  $total = count(trakt_tv_nids_with_trakt_id());
+  $finished = state_get('trakt_tv_refresh_cycle_finished');
+  $form['refresh'] = [
+    '#type' => 'fieldset',
+    '#title' => t('Keep shows up to date'),
+    '#description' => t('Each cron run refreshes @count shows from Trakt: rating, status, network, certification, website, next episode and US streaming services. Titles, descriptions, taglines and genres are never changed.', [
+      '@count' => TRAKT_TV_REFRESH_PER_CRON,
+    ]),
+  ];
+  $form['refresh']['status'] = [
+    '#markup' => '<p>' . format_plural($total, '1 show is kept up to date.', '@count shows are kept up to date.') . ' '
+      . ($finished
+        ? t('All shows were last refreshed @ago ago.', ['@ago' => format_interval(REQUEST_TIME - $finished)])
+        : t('A full refresh has not finished yet.'))
+      . '</p>',
+  ];
+  $form['refresh']['refresh_all'] = [
+    '#type' => 'submit',
+    '#value' => t('Refresh all shows now'),
+    '#submit' => ['trakt_tv_refresh_all_submit'],
+    '#limit_validation_errors' => [],
+    '#disabled' => !$total,
+  ];
+
   return $form;
+}
+
+/**
+ * Submit handler for the "Refresh all shows now" button.
+ */
+function trakt_tv_refresh_all_submit($form, &$form_state) {
+  module_load_include('inc', 'trakt_tv', 'trakt_tv.refresh');
+  batch_set(trakt_tv_refresh_batch());
 }
 
 /**
