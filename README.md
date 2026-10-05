@@ -80,6 +80,13 @@ Your code will be here after you authorize your site:
 The access token is refreshed automatically when it expires. If refreshing
 fails (for example, the Trakt app was deleted), repeat the authorization steps.
 
+## Link to Trakt
+
+The Trakt ID field can display as a **View on Trakt** link to the show's page
+on Trakt. New installs show it by default. On existing sites, go to Structure >
+Content types > TV Show > Manage Display, set the Trakt ID field's format to
+**Link to Trakt**, and save. The link text is editable in the format settings.
+
 ## Best-of lists (optional)
 
 Enable the included **Trakt TV Lists** submodule to mark shows that appear on

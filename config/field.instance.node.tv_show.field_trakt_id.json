@@ -26,9 +26,13 @@
     "display": {
         "default": {
             "label": "hidden",
-            "type": "hidden",
+            "type": "trakt_tv_link",
             "weight": "10",
-            "settings": []
+            "settings": {
+                "link_text": "View on Trakt",
+                "new_window": true
+            },
+            "module": "trakt_tv"
         }
     }
 }
