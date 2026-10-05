@@ -16,7 +16,7 @@ function trakt_tv_create_node_from_trakt_id($trakt_id) {
     return '<p>Access denied. You do not have permission to save TV shows.</p>';
   }
   
-  $show = trakt_tv_fetch_show_details($trakt_id);
+  $show = trakt_tv_fetch_show_details($trakt_id, 'full,images');
 
   if (empty($show) || !isset($show['title'])) {
     backdrop_set_message(t('Failed to fetch or invalid show data.'), 'error');
@@ -162,6 +162,9 @@ function trakt_tv_create_node_from_trakt_id($trakt_id) {
   if (!empty($term2->tid)) {
     $node->field_network['und'][0]['tid'] = $term2->tid;
   }
+  // A missing or failed poster download should not stop the show being saved.
+  trakt_tv_set_node_poster($node, $show);
+
   $node->status = 1; // Published.
   $node->promote = 1; // Promoted to the front page.
   $node->language = LANGUAGE_NONE;
@@ -229,4 +232,200 @@ function trakt_tv_show_exists($trakt_id) {
   )->fetchField();
 
   return $nid;
+}
+
+/**
+ * Download a show's poster from Trakt and save it as a managed file.
+ *
+ * Trakt requires images to be stored locally; linking to media.trakt.tv is
+ * blocked. The medium size (600x900 WebP) is used.
+ *
+ * @param array $show
+ *   Show data from the Trakt API, requested with extended=images.
+ *
+ * @return object|false
+ *   The saved file entity, or FALSE if there is no poster or it failed.
+ */
+function trakt_tv_download_poster(array $show) {
+  if (empty($show['images']['poster'][0]) || empty($show['ids']['trakt'])) {
+    return FALSE;
+  }
+
+  // Trakt returns the URL without a scheme.
+  $url = 'https://' . preg_replace('#^https?://#', '', $show['images']['poster'][0]);
+  if (parse_url($url, PHP_URL_HOST) !== 'media.trakt.tv') {
+    watchdog('trakt_tv', 'Ignored poster from unexpected host: @url', ['@url' => $url], WATCHDOG_WARNING);
+    return FALSE;
+  }
+
+  $response = backdrop_http_request($url, ['timeout' => 20]);
+  if ($response->code != 200 || empty($response->data)) {
+    watchdog('trakt_tv', 'Poster download failed (@code) for @url', [
+      '@code' => $response->code,
+      '@url' => $url,
+    ], WATCHDOG_WARNING);
+    return FALSE;
+  }
+
+  $directory = 'public://trakt_tv/posters';
+  if (!file_prepare_directory($directory, FILE_CREATE_DIRECTORY | FILE_MODIFY_PERMISSIONS)) {
+    watchdog('trakt_tv', 'Poster directory @dir is not writable.', ['@dir' => $directory], WATCHDOG_ERROR);
+    return FALSE;
+  }
+
+  $extension = strtolower(pathinfo(parse_url($url, PHP_URL_PATH), PATHINFO_EXTENSION));
+  if (!in_array($extension, ['webp', 'jpg', 'jpeg', 'png'])) {
+    $extension = 'webp';
+  }
+  $destination = $directory . '/' . (int) $show['ids']['trakt'] . '.' . $extension;
+
+  $file = file_save_data($response->data, $destination, FILE_EXISTS_REPLACE);
+  if (!$file) {
+    return FALSE;
+  }
+
+  // Make sure what we saved really is an image before attaching it.
+  if (!image_get_info($file->uri)) {
+    watchdog('trakt_tv', 'Downloaded poster is not a valid image: @url', ['@url' => $url], WATCHDOG_WARNING);
+    file_delete($file->fid);
+    return FALSE;
+  }
+
+  return $file;
+}
+
+/**
+ * Set a TV show node's poster from Trakt show data. Does not save the node.
+ *
+ * @param Node $node
+ *   The tv_show node.
+ * @param array $show
+ *   Show data from the Trakt API, requested with extended=images.
+ *
+ * @return bool
+ *   TRUE if a poster was attached.
+ */
+function trakt_tv_set_node_poster(Node $node, array $show) {
+  if (!field_info_instance('node', 'field_poster', $node->type)) {
+    return FALSE;
+  }
+
+  $file = trakt_tv_download_poster($show);
+  if (!$file) {
+    return FALSE;
+  }
+
+  $node->field_poster[LANGUAGE_NONE][0] = [
+    'fid' => $file->fid,
+    'alt' => t('@title poster', ['@title' => $node->title]),
+    'title' => '',
+  ];
+  return TRUE;
+}
+
+/**
+ * Get node IDs of TV shows that have a Trakt ID but no poster yet.
+ *
+ * @param int $after_nid
+ *   Only return nodes with a higher nid (for batch paging).
+ * @param int|null $limit
+ *   Maximum number of IDs, or NULL for all.
+ *
+ * @return array
+ *   Node IDs, ascending.
+ */
+function trakt_tv_nids_missing_poster($after_nid = 0, $limit = NULL) {
+  $query = db_select('node', 'n')
+    ->fields('n', ['nid'])
+    ->condition('n.type', 'tv_show')
+    ->condition('n.nid', $after_nid, '>')
+    ->orderBy('n.nid');
+  $query->innerJoin('field_data_field_trakt_id', 't', "t.entity_type = 'node' AND t.entity_id = n.nid");
+  $query->leftJoin('field_data_field_poster', 'p', "p.entity_type = 'node' AND p.entity_id = n.nid");
+  $query->isNull('p.entity_id');
+  if ($limit) {
+    $query->range(0, $limit);
+  }
+  return $query->execute()->fetchCol();
+}
+
+/**
+ * Batch definition: fetch posters for every TV show that lacks one.
+ */
+function trakt_tv_poster_backfill_batch() {
+  return [
+    'title' => t('Fetching TV show posters from Trakt'),
+    'operations' => [
+      ['trakt_tv_poster_backfill_operation', []],
+    ],
+    'finished' => 'trakt_tv_poster_backfill_finished',
+    'file' => backdrop_get_path('module', 'trakt_tv') . '/trakt_tv.nodes.inc',
+  ];
+}
+
+/**
+ * Batch operation: fetch posters for a few shows per request.
+ */
+function trakt_tv_poster_backfill_operation(&$context) {
+  module_load_include('inc', 'trakt_tv', 'trakt_tv.api');
+
+  if (!isset($context['sandbox']['total'])) {
+    $context['sandbox']['total'] = count(trakt_tv_nids_missing_poster());
+    $context['sandbox']['done'] = 0;
+    $context['sandbox']['last_nid'] = 0;
+    $context['results'] = ['added' => 0, 'missing' => []];
+  }
+  if (empty($context['sandbox']['total'])) {
+    $context['finished'] = 1;
+    return;
+  }
+
+  foreach (trakt_tv_nids_missing_poster($context['sandbox']['last_nid'], 5) as $nid) {
+    $context['sandbox']['last_nid'] = $nid;
+    $context['sandbox']['done']++;
+
+    $node = node_load($nid);
+    $trakt_id = $node->field_trakt_id[LANGUAGE_NONE][0]['value'] ?? NULL;
+    $show = $trakt_id ? trakt_tv_fetch_show_details($trakt_id, 'images') : [];
+
+    // File fields compare against the unchanged entity to track file usage.
+    $node->original = clone $node;
+    if ($show && trakt_tv_set_node_poster($node, $show)) {
+      // Save only the fields, so the show's "updated" date and revisions are
+      // left alone.
+      field_attach_presave('node', $node);
+      field_attach_update('node', $node);
+      entity_get_controller('node')->resetCache([$nid]);
+      $context['results']['added']++;
+    }
+    else {
+      $context['results']['missing'][] = $node->title;
+    }
+    $context['message'] = t('Checked @title (@done of @total)', [
+      '@title' => $node->title,
+      '@done' => $context['sandbox']['done'],
+      '@total' => $context['sandbox']['total'],
+    ]);
+  }
+
+  $context['finished'] = $context['sandbox']['done'] >= $context['sandbox']['total']
+    ? 1
+    : $context['sandbox']['done'] / $context['sandbox']['total'];
+}
+
+/**
+ * Batch finished callback for the poster backfill.
+ */
+function trakt_tv_poster_backfill_finished($success, $results, $operations) {
+  if (!$success) {
+    backdrop_set_message(t('Fetching posters stopped with an error. Run it again to continue where it left off.'), 'error');
+    return;
+  }
+  backdrop_set_message(format_plural($results['added'] ?? 0, 'Added 1 poster.', 'Added @count posters.'));
+  if (!empty($results['missing'])) {
+    backdrop_set_message(t('No poster available for: @titles', [
+      '@titles' => implode(', ', $results['missing']),
+    ]), 'warning');
+  }
+  cache_clear_all();
 }

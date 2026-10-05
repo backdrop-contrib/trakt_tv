@@ -22,6 +22,7 @@ It currently, does the following.
    - Website
    - Genres
    - Network
+   - Poster (downloaded and stored on your site; see "Posters" below)
 4) Provides a "Recently watched on Trakt" block showing the site owner's most
    recently scrobbled episodes, for placement in any layout region. The number
    of episodes shown is configurable, and results are cached for 15 minutes to
@@ -78,6 +79,22 @@ Your code will be here after you authorize your site:
 
 The access token is refreshed automatically when it expires. If refreshing
 fails (for example, the Trakt app was deleted), repeat the authorization steps.
+
+## Posters
+
+TV Show content has a **Poster** image field. When a show is added from Trakt,
+its poster (600x900, WebP) is downloaded to `files/trakt_tv/posters/` and
+attached. Trakt requires images to be stored on your site: linking directly to
+`media.trakt.tv` is not allowed and is blocked.
+
+For shows added before this feature, go to `admin/config/media/trakt_tv` and
+click **Fetch missing posters**. It runs as a batch and skips shows that
+already have a poster, so it is safe to run again. A few shows may have no
+poster on Trakt; they are listed when the batch finishes.
+
+The poster uses core image styles ("large" on the show page, "medium" in
+teasers). Change this under Manage Display for the TV Show content type, or
+add the field to your Views.
 
 
 ## Issues

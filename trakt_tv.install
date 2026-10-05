@@ -16,12 +16,45 @@
       'link_title' => st('Trakt TV Search'),
       'link_path' => 'trakt-tv-search',
       'menu_name' => 'main-menu',
-      'weight' => -1, 
+      'weight' => -1,
       'customized' => 1,
     );
     menu_link_save($item);
 
     // Update the menu router information.
     menu_rebuild();
-    
+
+    // Fresh installs get field_poster from config/ along with the other
+    // fields. This call is a no-op then; it only matters if that config was
+    // skipped for some reason.
+    _trakt_tv_ensure_poster_field();
   }
+
+/**
+ * Add a Poster image field to TV Show content.
+ */
+function trakt_tv_update_1100() {
+  _trakt_tv_ensure_poster_field();
+}
+
+/**
+ * Ensure the field_poster field and its tv_show instance exist. Idempotent.
+ *
+ * Reads the definitions from the module's config/ directory, so fresh
+ * installs and updated sites get exactly the same field.
+ */
+function _trakt_tv_ensure_poster_field() {
+  $config_dir = backdrop_get_path('module', 'trakt_tv') . '/config/';
+
+  if (!field_info_field('field_poster')) {
+    $field = json_decode(file_get_contents($config_dir . 'field.field.field_poster.json'), TRUE);
+    unset($field['_config_name']);
+    field_create_field($field);
+  }
+
+  if (!field_info_instance('node', 'field_poster', 'tv_show') && node_type_load('tv_show')) {
+    $instance = json_decode(file_get_contents($config_dir . 'field.instance.node.tv_show.field_poster.json'), TRUE);
+    unset($instance['_config_name']);
+    field_create_instance($instance);
+  }
+}

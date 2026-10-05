@@ -179,7 +179,33 @@ function trakt_tv_settings_form($form, &$form_state) {
     '#value' => t('Save Configuration'),
   ];
 
+  if (field_info_instance('node', 'field_poster', 'tv_show')) {
+    $missing = count(trakt_tv_nids_missing_poster());
+    $form['posters'] = [
+      '#type' => 'fieldset',
+      '#title' => t('Posters'),
+      '#description' => t('New shows get their poster when they are added. Shows added earlier can fetch theirs here. Shows that already have a poster are skipped.'),
+    ];
+    $form['posters']['status'] = [
+      '#markup' => '<p>' . format_plural($missing, '1 show has no poster yet.', '@count shows have no poster yet.') . '</p>',
+    ];
+    $form['posters']['fetch_posters'] = [
+      '#type' => 'submit',
+      '#value' => t('Fetch missing posters'),
+      '#submit' => ['trakt_tv_fetch_posters_submit'],
+      '#limit_validation_errors' => [],
+      '#disabled' => !$missing,
+    ];
+  }
+
   return $form;
+}
+
+/**
+ * Submit handler for the "Fetch missing posters" button.
+ */
+function trakt_tv_fetch_posters_submit($form, &$form_state) {
+  batch_set(trakt_tv_poster_backfill_batch());
 }
 
 /**

@@ -401,8 +401,14 @@ function trakt_tv_search_api($query) {
 
 /**
  * Fetch full TV show details by Trakt ID.
+ *
+ * @param int $trakt_id
+ *   The Trakt ID of the show.
+ * @param string $extended
+ *   Trakt "extended" levels, comma separated. Add "images" to get poster and
+ *   fanart URLs in $show['images'].
  */
-function trakt_tv_fetch_show_details($trakt_id) {
+function trakt_tv_fetch_show_details($trakt_id, $extended = 'full') {
   $access_token = trakt_tv_get_valid_token();
   $creds = trakt_tv_get_credentials();
 
@@ -411,7 +417,7 @@ function trakt_tv_fetch_show_details($trakt_id) {
     return [];
   }
 
-  $api_url = 'https://api.trakt.tv/shows/' . intval($trakt_id) . '?extended=full';
+  $api_url = 'https://api.trakt.tv/shows/' . intval($trakt_id) . '?extended=' . preg_replace('/[^a-z,]/', '', $extended);
 
   $ch = curl_init($api_url);
   curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
