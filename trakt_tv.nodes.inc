@@ -38,7 +38,7 @@ function trakt_tv_create_node_from_trakt_id($trakt_id) {
   $node->body = [
     'und' => [
       [
-        'value' => $show['overview'] ?? 'No description available.',
+        'value' => trakt_tv_text_to_html($show['overview'] ?? 'No description available.'),
         'format' => 'filtered_html',
       ],
     ],
@@ -450,4 +450,30 @@ function trakt_tv_save_node_fields(Node $node, Node $original) {
 
   unset($node->original);
   entity_get_controller('node')->resetCache([$node->nid]);
+}
+
+/**
+ * Converts plain text from Trakt (e.g. a show overview) to HTML paragraphs.
+ *
+ * The body is saved in an HTML text format, so it must be HTML: bare text
+ * makes CKEditor 5 warn that activating it "will reformat the content",
+ * because the editor would wrap the text in <p> tags. Blank lines separate
+ * paragraphs; single line breaks become <br>.
+ *
+ * @param string $text
+ *   Plain text.
+ *
+ * @return string
+ *   Escaped HTML, one <p> per paragraph.
+ */
+function trakt_tv_text_to_html($text) {
+  $text = str_replace(["\r\n", "\r"], "\n", trim((string) $text));
+  $paragraphs = [];
+  foreach (preg_split('/\n\s*\n/', $text) as $paragraph) {
+    $paragraph = trim($paragraph);
+    if ($paragraph !== '') {
+      $paragraphs[] = '<p>' . nl2br(check_plain($paragraph), FALSE) . '</p>';
+    }
+  }
+  return implode("\n", $paragraphs);
 }
