@@ -19,7 +19,8 @@ sign-in needed) and matches them to your shows by Trakt ID.
 - **TV Lists vocabulary:** each term is one list. It has:
   - **Trakt list:** the public Trakt list to sync from, e.g.
     `https://trakt.tv/users/USERNAME/lists/LIST-NAME`.
-  - **Original list:** the publication's own page. This is what visitors see.
+  - **Original list:** the publication's own page, linked from show pages and
+    from the list's page on your site.
   - **Keep in sync:** re-sync daily on cron, for lists that change (IMDb).
 - **On these lists** field on TV Show content: filled in automatically. Shows
   on the Trakt list are tagged; shows that drop off are untagged. Shows that
