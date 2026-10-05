@@ -518,3 +518,56 @@ function trakt_tv_get_credentials() {
 
 
 
+
+/**
+ * GET a public Trakt API endpoint using only the Client ID (no sign-in).
+ *
+ * Suitable for public data such as shows, images and public lists. Retries
+ * once if Trakt asks the site to slow down (HTTP 429).
+ *
+ * @param string $path
+ *   API path without the host, e.g. 'lists/123/items/show'.
+ * @param array $query
+ *   Query string parameters.
+ *
+ * @return object
+ *   An object with:
+ *   - code: HTTP status code (0 if the request could not be made).
+ *   - data: Decoded JSON (array), or NULL.
+ *   - headers: Response headers with lower-case names.
+ */
+function trakt_tv_api_get($path, array $query = []) {
+  $creds = trakt_tv_get_credentials();
+  $result = (object) ['code' => 0, 'data' => NULL, 'headers' => []];
+  if (empty($creds['client_id'])) {
+    watchdog('trakt_tv', 'Trakt API call skipped: no Client ID is configured.', [], WATCHDOG_ERROR);
+    return $result;
+  }
+
+  $url = url('https://api.trakt.tv/' . ltrim($path, '/'), ['query' => $query, 'external' => TRUE]);
+  $options = [
+    'headers' => [
+      'Content-Type' => 'application/json',
+      'trakt-api-version' => '2',
+      'trakt-api-key' => $creds['client_id'],
+    ],
+    'timeout' => 20,
+  ];
+
+  for ($attempt = 0; $attempt < 2; $attempt++) {
+    $response = backdrop_http_request($url, $options);
+    if ($response->code == 429 && $attempt == 0) {
+      $wait = isset($response->headers['retry-after']) ? (int) $response->headers['retry-after'] : 2;
+      sleep(max(1, min($wait, 10)));
+      continue;
+    }
+    break;
+  }
+
+  $result->code = (int) $response->code;
+  $result->headers = isset($response->headers) ? $response->headers : [];
+  if ($result->code == 200 && isset($response->data)) {
+    $result->data = json_decode($response->data, TRUE);
+  }
+  return $result;
+}

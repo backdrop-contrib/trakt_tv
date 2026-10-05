@@ -1,0 +1,9 @@
+{
+    "_config_name": "taxonomy.vocabulary.tv_lists",
+    "name": "TV Lists",
+    "machine_name": "tv_lists",
+    "description": "\"Best of\" lists that TV shows can appear on. Each list syncs from a public Trakt list and links to the original publication.",
+    "hierarchy": "0",
+    "language": 0,
+    "weight": 0
+}

@@ -388,14 +388,9 @@ function trakt_tv_poster_backfill_operation(&$context) {
     $trakt_id = $node->field_trakt_id[LANGUAGE_NONE][0]['value'] ?? NULL;
     $show = $trakt_id ? trakt_tv_fetch_show_details($trakt_id, 'images') : [];
 
-    // File fields compare against the unchanged entity to track file usage.
-    $node->original = clone $node;
+    $original = clone $node;
     if ($show && trakt_tv_set_node_poster($node, $show)) {
-      // Save only the fields, so the show's "updated" date and revisions are
-      // left alone.
-      field_attach_presave('node', $node);
-      field_attach_update('node', $node);
-      entity_get_controller('node')->resetCache([$nid]);
+      trakt_tv_save_node_fields($node, $original);
       $context['results']['added']++;
     }
     else {
@@ -428,4 +423,31 @@ function trakt_tv_poster_backfill_finished($success, $results, $operations) {
     ]), 'warning');
   }
   cache_clear_all();
+}
+
+/**
+ * Save a node's field values without a full node save.
+ *
+ * Used when the module adds data (posters, list tags) to existing shows: the
+ * show's "updated" date, author and revisions are left alone.
+ *
+ * @param Node $node
+ *   The node, with field values already changed.
+ * @param Node $original
+ *   A clone of the node taken before the changes. File and taxonomy fields
+ *   compare against it.
+ */
+function trakt_tv_save_node_fields(Node $node, Node $original) {
+  $node->original = $original;
+  field_attach_presave('node', $node);
+  field_attach_update('node', $node);
+
+  // Keep taxonomy term pages ("content tagged with ...") up to date.
+  if (module_exists('taxonomy')) {
+    taxonomy_delete_node_index($node);
+    taxonomy_build_node_index($node);
+  }
+
+  unset($node->original);
+  entity_get_controller('node')->resetCache([$node->nid]);
 }

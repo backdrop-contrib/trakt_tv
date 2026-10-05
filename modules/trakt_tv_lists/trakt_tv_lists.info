@@ -1,0 +1,10 @@
+name = Trakt TV Lists
+description = Tags TV shows that appear on "best of" lists (NYT, IMDb, Emmys...) using public Trakt lists, and links to the original lists.
+package = Custom
+backdrop = 1.x
+type = module
+dependencies[] = trakt_tv
+dependencies[] = taxonomy
+dependencies[] = link
+dependencies[] = list
+configure = admin/structure/taxonomy/tv_lists

@@ -1,0 +1,442 @@
+<?php
+
+/**
+ * @file
+ * Tags TV shows that appear on "best of" lists, using public Trakt lists.
+ *
+ * Each term in the "TV Lists" vocabulary is one list. It names a public Trakt
+ * list to sync from and the publication's own page to link visitors to. Shows
+ * on this site that are on the Trakt list are tagged with the term; shows that
+ * drop off are untagged. Rankings are not stored: visitors follow the link to
+ * the original list for that.
+ */
+
+/**
+ * Implements hook_menu().
+ */
+function trakt_tv_lists_menu() {
+  $items['taxonomy/term/%taxonomy_term/trakt-sync'] = [
+    'title' => 'Sync with Trakt',
+    'page callback' => 'backdrop_get_form',
+    'page arguments' => ['trakt_tv_lists_sync_confirm_form', 2],
+    'access callback' => 'trakt_tv_lists_sync_access',
+    'access arguments' => [2],
+    'type' => MENU_LOCAL_TASK,
+    'weight' => 20,
+  ];
+  return $items;
+}
+
+/**
+ * Access callback: only TV Lists terms, only for taxonomy administrators.
+ */
+function trakt_tv_lists_sync_access($term) {
+  return $term instanceof TaxonomyTerm
+    && $term->vocabulary == 'tv_lists'
+    && user_access('administer taxonomy');
+}
+
+/**
+ * Implements hook_cron().
+ *
+ * Once a day, re-syncs every list that has "Keep in sync" checked.
+ */
+function trakt_tv_lists_cron() {
+  if (REQUEST_TIME - state_get('trakt_tv_lists_cron_last', 0) < 86400) {
+    return;
+  }
+  state_set('trakt_tv_lists_cron_last', REQUEST_TIME);
+
+  $tids = db_query('SELECT tid FROM {taxonomy_term_data} WHERE vocabulary = :vocabulary', [':vocabulary' => 'tv_lists'])->fetchCol();
+  foreach (taxonomy_term_load_multiple($tids) as $term) {
+    if (!empty($term->field_tv_list_sync[LANGUAGE_NONE][0]['value'])) {
+      trakt_tv_lists_sync_term($term);
+    }
+  }
+}
+
+/**
+ * Implements hook_form_FORM_ID_alter() for taxonomy_form_term.
+ *
+ * Syncs a list as soon as it is saved, and shows when it last synced.
+ */
+function trakt_tv_lists_form_taxonomy_form_term_alter(&$form, &$form_state) {
+  if (empty($form['#vocabulary']) || $form['#vocabulary']->machine_name != 'tv_lists') {
+    return;
+  }
+
+  $tid = $form['#term']['tid'] ?? NULL;
+  if ($tid && ($summary = trakt_tv_lists_last_sync_summary($tid))) {
+    $form['trakt_tv_lists_status'] = [
+      '#markup' => '<p class="description">' . $summary . '</p>',
+      '#weight' => -20,
+    ];
+  }
+  $form['#submit'][] = 'trakt_tv_lists_term_form_submit';
+}
+
+/**
+ * Submit handler: sync the list that was just saved.
+ */
+function trakt_tv_lists_term_form_submit($form, &$form_state) {
+  if (!empty($form_state['tid']) && ($term = taxonomy_term_load($form_state['tid']))) {
+    trakt_tv_lists_sync_term($term, TRUE);
+  }
+}
+
+/**
+ * Confirmation form for "Sync with Trakt".
+ */
+function trakt_tv_lists_sync_confirm_form($form, &$form_state, TaxonomyTerm $term) {
+  $form_state['term'] = $term;
+  $summary = trakt_tv_lists_last_sync_summary($term->tid);
+  return confirm_form(
+    $form,
+    t('Sync %list with Trakt?', ['%list' => $term->name]),
+    'taxonomy/term/' . $term->tid,
+    ($summary ? $summary . ' ' : '') . t('Shows on this site that are on the Trakt list will be tagged, and shows that are no longer on it will be untagged.'),
+    t('Sync now'),
+    t('Cancel')
+  );
+}
+
+/**
+ * Submit handler for the "Sync with Trakt" confirmation form.
+ */
+function trakt_tv_lists_sync_confirm_form_submit($form, &$form_state) {
+  trakt_tv_lists_sync_term($form_state['term'], TRUE);
+  $form_state['redirect'] = 'taxonomy/term/' . $form_state['term']->tid;
+}
+
+/**
+ * Sync one TV list: tag shows on the Trakt list, untag shows not on it.
+ *
+ * @param TaxonomyTerm $term
+ *   A term in the tv_lists vocabulary.
+ * @param bool $report
+ *   TRUE to show the outcome as a message to the person who triggered it.
+ *
+ * @return array
+ *   Keys: matched, added, removed, error (NULL on success), time.
+ */
+function trakt_tv_lists_sync_term(TaxonomyTerm $term, $report = FALSE) {
+  module_load_include('inc', 'trakt_tv', 'trakt_tv.api');
+  module_load_include('inc', 'trakt_tv', 'trakt_tv.nodes');
+
+  $result = ['matched' => 0, 'added' => 0, 'removed' => 0, 'error' => NULL, 'time' => REQUEST_TIME];
+  $url = $term->field_tv_list_trakt_url[LANGUAGE_NONE][0]['url'] ?? '';
+  $api_path = trakt_tv_lists_api_path($url);
+
+  if (!$api_path) {
+    $result['error'] = t('"@url" is not a Trakt list address. Use one like https://trakt.tv/users/USERNAME/lists/LIST-NAME.', ['@url' => $url]);
+  }
+  else {
+    $trakt_ids = trakt_tv_lists_fetch_show_ids($api_path, $error);
+    if ($trakt_ids === FALSE) {
+      $result['error'] = $error;
+    }
+  }
+
+  // Never untag anything unless the whole list was read successfully.
+  if (!$result['error']) {
+    $on_list = [];
+    if ($trakt_ids) {
+      $query = db_select('field_data_field_trakt_id', 't')
+        ->fields('t', ['entity_id'])
+        ->condition('t.entity_type', 'node')
+        ->condition('t.bundle', 'tv_show')
+        ->condition('t.field_trakt_id_value', $trakt_ids, 'IN');
+      $on_list = $query->execute()->fetchCol();
+    }
+    $tagged = db_select('field_data_field_tv_lists', 'l')
+      ->fields('l', ['entity_id'])
+      ->condition('l.entity_type', 'node')
+      ->condition('l.field_tv_lists_tid', $term->tid)
+      ->execute()
+      ->fetchCol();
+
+    $result['matched'] = count(array_unique($on_list));
+    foreach (array_diff($on_list, $tagged) as $nid) {
+      $result['added'] += (int) trakt_tv_lists_tag_node($nid, $term->tid, TRUE);
+    }
+    foreach (array_diff($tagged, $on_list) as $nid) {
+      $result['removed'] += (int) trakt_tv_lists_tag_node($nid, $term->tid, FALSE);
+    }
+    cache_clear_all();
+  }
+
+  $log = state_get('trakt_tv_lists_last_sync', []);
+  $log[$term->tid] = $result;
+  state_set('trakt_tv_lists_last_sync', $log);
+
+  if ($result['error']) {
+    watchdog('trakt_tv_lists', 'Sync of %list failed: @error', ['%list' => $term->name, '@error' => $result['error']], WATCHDOG_WARNING);
+    if ($report) {
+      backdrop_set_message(t('Could not sync %list: @error', ['%list' => $term->name, '@error' => $result['error']]), 'error');
+    }
+  }
+  else {
+    $vars = [
+      '%list' => $term->name,
+      '@matched' => $result['matched'],
+      '@added' => $result['added'],
+      '@removed' => $result['removed'],
+    ];
+    watchdog('trakt_tv_lists', 'Synced %list: @matched shows on the list, @added tagged, @removed untagged.', $vars, WATCHDOG_NOTICE);
+    if ($report) {
+      backdrop_set_message(t('Synced %list: @matched shows on this site are on the list (@added newly tagged, @removed untagged).', $vars));
+    }
+  }
+  return $result;
+}
+
+/**
+ * Add or remove a TV list tag on one show, without a full node save.
+ *
+ * @return bool
+ *   TRUE if the show changed.
+ */
+function trakt_tv_lists_tag_node($nid, $tid, $add) {
+  $node = node_load($nid, NULL, TRUE);
+  if (!$node || $node->type != 'tv_show') {
+    return FALSE;
+  }
+  $original = clone $node;
+
+  $items = $node->field_tv_lists[LANGUAGE_NONE] ?? [];
+  $tids = array_map('intval', array_column($items, 'tid'));
+  if ($add && !in_array((int) $tid, $tids)) {
+    $items[] = ['tid' => (int) $tid];
+  }
+  elseif (!$add && in_array((int) $tid, $tids)) {
+    $items = array_values(array_filter($items, function ($item) use ($tid) {
+      return (int) $item['tid'] !== (int) $tid;
+    }));
+  }
+  else {
+    return FALSE;
+  }
+
+  $node->field_tv_lists[LANGUAGE_NONE] = $items;
+  trakt_tv_save_node_fields($node, $original);
+  return TRUE;
+}
+
+/**
+ * Turn a Trakt list address (or numeric list ID) into an API path.
+ *
+ * Accepts https://trakt.tv/users/USER/lists/LIST and https://trakt.tv/lists/ID,
+ * on any trakt.tv host, with or without a query string.
+ *
+ * @return string|false
+ *   E.g. 'users/itskloe/lists/the-100-best...' or 'lists/123', or FALSE.
+ */
+function trakt_tv_lists_api_path($url) {
+  $url = trim((string) $url);
+  if (ctype_digit($url)) {
+    return 'lists/' . $url;
+  }
+  $parts = parse_url($url);
+  if (empty($parts['host']) || !preg_match('/(^|\.)trakt\.tv$/i', $parts['host']) || empty($parts['path'])) {
+    return FALSE;
+  }
+  if (preg_match('#^/users/([^/]+)/lists/([^/]+)#', $parts['path'], $m)) {
+    return 'users/' . rawurlencode(rawurldecode($m[1])) . '/lists/' . rawurlencode(rawurldecode($m[2]));
+  }
+  if (preg_match('#^/lists/(\d+)#', $parts['path'], $m)) {
+    return 'lists/' . $m[1];
+  }
+  return FALSE;
+}
+
+/**
+ * Fetch the Trakt IDs of every show on a list, following all pages.
+ *
+ * @param string $api_path
+ *   From trakt_tv_lists_api_path().
+ * @param string|null $error
+ *   Set to a readable message on failure.
+ *
+ * @return int[]|false
+ *   Trakt show IDs, or FALSE if any page could not be read.
+ */
+function trakt_tv_lists_fetch_show_ids($api_path, &$error = NULL) {
+  $ids = [];
+  $page = 1;
+  do {
+    if ($page > 1) {
+      // Trakt throttles rapid bursts; pace page requests.
+      usleep(500000);
+    }
+    $response = trakt_tv_api_get($api_path . '/items/show', ['page' => $page, 'limit' => 100]);
+    if ($response->code != 200 || !is_array($response->data)) {
+      switch ($response->code) {
+        case 401:
+        case 403:
+          $error = t('the Trakt list is private. Its owner needs to make it public.');
+          break;
+        case 404:
+          $error = t('the Trakt list was not found. Check the address.');
+          break;
+        case 0:
+          $error = t('Trakt could not be reached, or no Client ID is configured.');
+          break;
+        default:
+          $error = t('Trakt returned HTTP @code.', ['@code' => $response->code]);
+      }
+      return FALSE;
+    }
+    foreach ($response->data as $item) {
+      if (!empty($item['show']['ids']['trakt'])) {
+        $ids[] = (int) $item['show']['ids']['trakt'];
+      }
+    }
+    $page_count = (int) ($response->headers['x-pagination-page-count'] ?? 1);
+    $page++;
+  } while ($page <= $page_count && $page <= 50);
+
+  return array_values(array_unique($ids));
+}
+
+/**
+ * One-line summary of a list's last sync, or '' if it never synced.
+ */
+function trakt_tv_lists_last_sync_summary($tid) {
+  $log = state_get('trakt_tv_lists_last_sync', []);
+  if (empty($log[$tid])) {
+    return '';
+  }
+  $last = $log[$tid];
+  $when = format_date($last['time'], 'short');
+  if (!empty($last['error'])) {
+    return t('Last sync failed (@when): @error', ['@when' => $when, '@error' => $last['error']]);
+  }
+  return t('Last synced @when: @matched shows on this site are on the list.', [
+    '@when' => $when,
+    '@matched' => $last['matched'],
+  ]);
+}
+
+/**
+ * Implements hook_taxonomy_term_delete().
+ */
+function trakt_tv_lists_taxonomy_term_delete(TaxonomyTerm $term) {
+  if ($term->vocabulary == 'tv_lists') {
+    $log = state_get('trakt_tv_lists_last_sync', []);
+    unset($log[$term->tid]);
+    state_set('trakt_tv_lists_last_sync', $log);
+  }
+}
+
+/**
+ * Implements hook_block_info().
+ */
+function trakt_tv_lists_block_info() {
+  return [
+    'about' => [
+      'info' => t('About this TV list'),
+      'description' => t('On a TV list page: the list description and a link to the original list. Shows nothing on other pages.'),
+    ],
+  ];
+}
+
+/**
+ * Implements hook_block_view().
+ */
+function trakt_tv_lists_block_view($delta = '', $settings = [], $contexts = []) {
+  if ($delta != 'about') {
+    return [];
+  }
+  // Term pages are often served by a View, which hides the term from
+  // menu_get_object(), so fall back to the path.
+  $term = menu_get_object('taxonomy_term', 2);
+  if (!$term && arg(0) == 'taxonomy' && arg(1) == 'term' && ctype_digit((string) arg(2))) {
+    $term = taxonomy_term_load(arg(2));
+  }
+  if (!$term || $term->vocabulary != 'tv_lists' || arg(3)) {
+    return [];
+  }
+
+  $content = [];
+  if (!empty($term->description)) {
+    $content['description'] = [
+      '#markup' => check_markup($term->description, $term->format),
+    ];
+  }
+  $source = $term->field_tv_list_source[LANGUAGE_NONE][0]['url'] ?? '';
+  if ($source) {
+    $host = preg_replace('/^www\./', '', (string) parse_url($source, PHP_URL_HOST));
+    $content['source'] = [
+      '#type' => 'link',
+      '#title' => t('See the original list on @site', ['@site' => $host]),
+      '#href' => $source,
+      '#options' => ['attributes' => ['class' => ['trakt-tv-lists-source'], 'rel' => 'noopener']],
+      '#prefix' => '<p>',
+      '#suffix' => '</p>',
+    ];
+  }
+  return $content ? ['subject' => NULL, 'content' => $content] : [];
+}
+
+/**
+ * Implements hook_field_formatter_info().
+ */
+function trakt_tv_lists_field_formatter_info() {
+  return [
+    'trakt_tv_lists_source_link' => [
+      'label' => t('Link to original list'),
+      'description' => t('List name, linked to the publication\'s own page for the list (falls back to the term page).'),
+      'field types' => ['taxonomy_term_reference'],
+      'settings' => ['new_window' => TRUE],
+    ],
+  ];
+}
+
+/**
+ * Implements hook_field_formatter_settings_form().
+ */
+function trakt_tv_lists_field_formatter_settings_form($field, $instance, $view_mode, $form, &$form_state) {
+  $settings = $instance['display'][$view_mode]['settings'];
+  return [
+    'new_window' => [
+      '#type' => 'checkbox',
+      '#title' => t('Open original lists in a new window'),
+      '#default_value' => $settings['new_window'],
+    ],
+  ];
+}
+
+/**
+ * Implements hook_field_formatter_settings_summary().
+ */
+function trakt_tv_lists_field_formatter_settings_summary($field, $instance, $view_mode) {
+  $settings = $instance['display'][$view_mode]['settings'];
+  return $settings['new_window'] ? t('Opens in a new window') : t('Opens in the same window');
+}
+
+/**
+ * Implements hook_field_formatter_view().
+ */
+function trakt_tv_lists_field_formatter_view($entity_type, $entity, $field, $instance, $langcode, $items, $display) {
+  $element = [];
+  $terms = taxonomy_term_load_multiple(array_column($items, 'tid'));
+
+  foreach ($items as $delta => $item) {
+    if (empty($terms[$item['tid']])) {
+      continue;
+    }
+    $term = $terms[$item['tid']];
+    $source = $term->field_tv_list_source[LANGUAGE_NONE][0]['url'] ?? '';
+    $options = [];
+    if ($source && $display['settings']['new_window']) {
+      $options['attributes'] = ['target' => '_blank', 'rel' => 'noopener'];
+    }
+    $element[$delta] = [
+      '#type' => 'link',
+      '#title' => $term->name,
+      '#href' => $source ?: 'taxonomy/term/' . $term->tid,
+      '#options' => $options,
+    ];
+  }
+  return $element;
+}
